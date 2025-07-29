@@ -7,16 +7,21 @@ from src.rag import RAGChatbot
 def main():
     bot = RAGChatbot()
 
+    def chat_with_bot(message, history):
+        # history is a list of [user, bot] pairs
+        response = bot.ask(message)
+        history.append((message, response))
+        return "", history
+
     with gr.Blocks() as demo:
         gr.Markdown("# 🧠 Cognitive Biases Chatbot")
-        query = gr.Textbox(label="Ask about cognitive biases:")
-        output = gr.Textbox(label="Answer")
-        submit = gr.Button("Ask")
 
-        def respond(q):
-            return bot.ask(q)
+        chatbot = gr.Chatbot(label="Chat History", height=500)
+        msg = gr.Textbox(label="Your message")
+        clear = gr.Button("Clear Chat")
 
-        submit.click(respond, inputs=[query], outputs=[output])
+        msg.submit(chat_with_bot, inputs=[msg, chatbot], outputs=[msg, chatbot])
+        clear.click(lambda: None, None, chatbot)
 
     demo.launch()
 
