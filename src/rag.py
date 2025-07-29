@@ -7,18 +7,13 @@ from src.loader import load_pdf_chunks
 
 
 class RAGChatbot:
-    def __init__(self):
-        # Load data
-        print("Loading PDF and building index...")
+    def __init__(self, model_name):
+        print(f"Loading PDF and building index for model {model_name}...")
         self.texts = load_pdf_chunks(PDF_PATH)
         self.embedder = Embedder(self.texts)
 
-        # Configure Gemini
-        api_key = get_google_api_key()
-        if not api_key:
-            raise ValueError("Google API key not found.")
-        genai.configure(api_key=api_key)
-        self.model = genai.GenerativeModel("models/gemini-pro")
+        genai.configure(api_key=get_google_api_key())
+        self.model = genai.GenerativeModel(model_name)
         print("Ready.")
 
     def ask(self, query, mode="tutor"):
