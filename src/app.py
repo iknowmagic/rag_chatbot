@@ -2,6 +2,7 @@
 import gradio as gr
 import nltk
 from nltk.translate.bleu_score import SmoothingFunction, sentence_bleu
+from sentence_transformers import SentenceTransformer, util
 
 from src.models import list_available_models
 from src.rag import RAGChatbot
@@ -9,7 +10,10 @@ from src.rag import RAGChatbot
 # Ensure required NLTK data is available
 nltk.download("punkt", quiet=True)
 
-# Example Q/A pairs from your PDF for BLEU evaluation
+# Load SBERT model once for semantic similarity
+semantic_model = SentenceTransformer("all-MiniLM-L6-v2")
+
+# Example Q/A pairs from your PDF for evaluation
 reference_data = {
     "What is confirmation bias?": [
         "the tendency to search for, interpret, or remember information in a way that confirms one's preconceptions"
@@ -20,62 +24,68 @@ reference_data = {
     "What is availability heuristic?": [
         "estimating the likelihood of events based on how easily examples come to mind"
     ],
-    # Add more here for richer BLEU checks
 }
 
 sample_questions = list(reference_data.keys())
-smoothie = SmoothingFunction().method1  # Smoothing for BLEU
+smoothie = SmoothingFunction().method1  # BLEU smoothing
 
 
 def main():
     bot = None
 
     def load_bot(selected_model):
-        """Load the RAG chatbot with the selected model."""
         nonlocal bot
         bot = RAGChatbot(model_name=selected_model)
         return f"Loaded model: {selected_model}"
 
     def insert_sample(choice):
-        """Insert a sample question into the message box."""
         return choice
 
-    def chat_with_bot(message, history, compute_bleu):
-        """Handle sending a message to the bot and optionally compute BLEU."""
+    def chat_with_bot(message, history, compute_bleu, compute_semantic):
         if not bot:
-            return "Please select a model first", history, None
+            return "Please select a model first", history, None, None, ""
 
         try:
-            response = bot.ask(message)
+            answer, sources = bot.ask(message)
         except Exception as e:
-            return f"Error: {str(e)}", history, None
+            return f"Error: {str(e)}", history, None, None, ""
 
-        # Append messages in the correct format for type="messages"
+        # Append messages for type="messages"
         history.append({"role": "user", "content": message})
-        history.append({"role": "assistant", "content": response})
+        history.append({"role": "assistant", "content": answer})
 
+        # Format sources into markdown for the accordion
+        refs_markdown = "\n".join(
+            [f"**{src['pdf']} - Page {src['page']}**\n> {src['text']}" for src in sources]
+        )
+
+        # BLEU and Semantic scores
         bleu_score = None
-        if compute_bleu and message in reference_data:
-            reference = [reference_data[message][0].split()]
-            candidate = response.split()
-            bleu_score = sentence_bleu(
-                reference, candidate, smoothing_function=smoothie
-            )
-            bleu_score = round(bleu_score, 3)
+        semantic_score = None
+        if message in reference_data:
+            ref_text = reference_data[message][0]
+            if compute_bleu:
+                reference = [ref_text.split()]
+                candidate = answer.split()
+                bleu_score = round(
+                    sentence_bleu(reference, candidate, smoothing_function=smoothie), 3
+                )
+            if compute_semantic:
+                emb_ref = semantic_model.encode(ref_text, convert_to_tensor=True)
+                emb_resp = semantic_model.encode(answer, convert_to_tensor=True)
+                semantic_score = round(float(util.cos_sim(emb_ref, emb_resp)), 3)
 
-        return "", history, bleu_score
+        return "", history, bleu_score, semantic_score, refs_markdown
 
-    with gr.Blocks() as demo:
-        gr.Markdown("# 🧠 Cognitive Biases Chatbot")
+    with gr.Blocks(css=".gradio-container {font-family: Arial, sans-serif;}") as demo:
+        gr.Markdown("## 🧠 Cognitive Biases Chatbot\nAsk about cognitive biases and check accuracy.")
 
         # Model selection
         with gr.Row():
             model_dropdown = gr.Dropdown(
-                choices=list_available_models(),
-                label="Select Model",
-                value=None
+                choices=list_available_models(), label="Select Model"
             )
-            load_button = gr.Button("Load Model")
+            load_button = gr.Button("Load Model", variant="primary")
         status = gr.Textbox(label="Status", interactive=False)
 
         # Sample questions
@@ -83,29 +93,38 @@ def main():
             sample_q = gr.Dropdown(sample_questions, label="Sample Questions")
             insert_button = gr.Button("Insert Question")
 
-        # Chat + BLEU
+        # Chat and evaluation controls
         chatbot = gr.Chatbot(label="Chat History", height=300, type="messages")
         msg = gr.Textbox(label="Your message")
+
         with gr.Row():
             bleu_toggle = gr.Checkbox(label="Compute BLEU Accuracy", value=False)
+            semantic_toggle = gr.Checkbox(label="Compute Semantic Similarity", value=False)
+
+        with gr.Row():
             bleu_output = gr.Textbox(label="BLEU Score", interactive=False)
-        clear = gr.Button("Clear Chat")
+            semantic_output = gr.Textbox(label="Semantic Score", interactive=False)
+
+        # References accordion declared here
+        with gr.Accordion("References", open=False):
+            refs_box = gr.Markdown("")
+
+        clear = gr.Button("Clear Chat", variant="secondary")
 
         # Bindings
         load_button.click(load_bot, inputs=[model_dropdown], outputs=[status])
         insert_button.click(insert_sample, inputs=[sample_q], outputs=[msg])
         msg.submit(
             chat_with_bot,
-            inputs=[msg, chatbot, bleu_toggle],
-            outputs=[msg, chatbot, bleu_output],
+            inputs=[msg, chatbot, bleu_toggle, semantic_toggle],
+            outputs=[msg, chatbot, bleu_output, semantic_output, refs_box],
         )
         clear.click(
-            lambda: (None, None, None),
+            lambda: (None, None, None, None, ""),
             None,
-            [msg, chatbot, bleu_output],
+            [msg, chatbot, bleu_output, semantic_output, refs_box],
         )
 
-    # You can set share=True if you want a public link
     demo.launch(share=False)
 
 

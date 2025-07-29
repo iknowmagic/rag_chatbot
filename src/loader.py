@@ -1,20 +1,19 @@
 # src/loader.py
-from typing import List
+from typing import List, Tuple
 
 import fitz  # PyMuPDF
 
 
-def load_pdf_chunks(path: str, chunk_size=500, overlap=50) -> List[str]:
+def load_pdf_chunks(path: str, chunk_size=500, overlap=50) -> List[Tuple[str, int]]:
     doc = fitz.open(path)
-    full_text = ""
-    for page in doc:
-        full_text += page.get_text()
-    doc.close()
-
     chunks = []
-    start = 0
-    while start < len(full_text):
-        end = start + chunk_size
-        chunks.append(full_text[start:end])
-        start += chunk_size - overlap
+    for page_num, page in enumerate(doc, start=1):
+        page_text = page.get_text()
+        start = 0
+        while start < len(page_text):
+            end = start + chunk_size
+            chunk = page_text[start:end]
+            chunks.append((chunk, page_num))
+            start += chunk_size - overlap
+    doc.close()
     return chunks
