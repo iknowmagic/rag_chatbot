@@ -78,7 +78,7 @@ def main():
         return "", history, bleu_score, semantic_score, refs_markdown
 
     with gr.Blocks(css=".gradio-container {font-family: Arial, sans-serif;}") as demo:
-        gr.Markdown("## 🧠 Cognitive Biases Chatbot\nAsk about cognitive biases and check accuracy.")
+        gr.Markdown("## Cognitive Biases Chatbot\nAsk about cognitive biases and check accuracy.")
 
         # Model selection
         with gr.Row():
